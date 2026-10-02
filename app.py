@@ -73,7 +73,12 @@ def add_message(role, kind, content):
 # GEMINI REST API
 # ============================================================
 
-def ask_gemini(parts):
+def ask_gemini(extra_prompt=None):
+    """
+    Sends the chat history to Gemini.
+    If extra_prompt is given (e.g. the summary request), it is added
+    as a final user turn without being saved in the chat history.
+    """
     try:
 
         contents = []
@@ -88,6 +93,11 @@ def ask_gemini(parts):
                     if message["role"] == "assistant"
                     else "user"
                 )
+
+                # Gemini expects the conversation to start with a user turn,
+                # so skip the assistant welcome message at the beginning.
+                if not contents and role == "model":
+                    continue
 
                 contents.append(
                     {
@@ -122,6 +132,18 @@ def ask_gemini(parts):
                         ],
                     }
                 )
+
+        if extra_prompt:
+            contents.append(
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": extra_prompt
+                        }
+                    ],
+                }
+            )
 
         # Build request
         request_body = {
@@ -298,7 +320,7 @@ if "onboarded" not in st.session_state:
 # ============================================================
 
 header_col, button_col = st.columns(
-    [5, 2],
+    [3, 2],
     vertical_alignment="center",
 )
 
@@ -324,11 +346,7 @@ with button_col:
             "Summarizing your day..."
         ):
 
-            summary = ask_gemini(
-                [
-                    SUMMARY_REQUEST_PROMPT
-                ]
-            )
+            summary = ask_gemini(SUMMARY_REQUEST_PROMPT)
 
         success, info = send_whatsapp(
             st.session_state.whatsapp_number,
@@ -403,8 +421,6 @@ if user_input:
 
     text = user_input.text
 
-    parts = []
-
 
     # --------------------------------------------------------
     # PHOTO
@@ -412,17 +428,13 @@ if user_input:
 
     if photo is not None:
 
-        photo_bytes = photo.getvalue()
-
-        image_content = {
-            "data": photo_bytes,
-            "mime_type": photo.type,
-        }
-
         add_message(
             "user",
             "image",
-            image_content,
+            {
+                "data": photo.getvalue(),
+                "mime_type": photo.type,
+            },
         )
 
 
@@ -432,11 +444,7 @@ if user_input:
 
     if text:
 
-        add_message(
-            "user",
-            "text",
-            text,
-        )
+        add_message("user", "text", text)
 
     elif photo is not None:
 
@@ -448,14 +456,12 @@ if user_input:
 
 
     # --------------------------------------------------------
-    # GEMINI
+    # GEMINI (history already contains the new messages)
     # --------------------------------------------------------
 
-    with st.spinner(
-        "Crunching the numbers..."
-    ):
+    with st.spinner("Crunching the numbers..."):
 
-        answer = ask_gemini(parts)
+        answer = ask_gemini()
 
 
     # --------------------------------------------------------
